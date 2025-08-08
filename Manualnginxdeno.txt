@@ -1,0 +1,156 @@
+Perfect — since your **OpenSSL is already compiled with `oqsprovider`** and properly installed under `/etc/ssl`, and the `openssl` CLI already shows both `default` and `oqs` providers, that makes the process much simpler.
+
+Now you just need to **build Nginx** from source, **link it to your custom OpenSSL** (in `/etc/ssl`), and **verify it's using that version**.
+
+---
+
+## ✅ STEP-BY-STEP TO SET UP NGINX WITH EXISTING OPENSSL AT `/etc/ssl`
+
+---
+
+### ✅ 1. Check Your OpenSSL Version and Providers
+
+```bash
+openssl version
+openssl list -providers
+```
+
+Make sure it shows something like:
+
+```
+OpenSSL 3.5.1  ...
+Providers:
+  default
+  oqs
+```
+
+✅ You're good here.
+
+---
+
+### ✅ 2. Download and Build Nginx Linked to `/etc/ssl`
+
+```bash
+cd ~
+wget http://nginx.org/download/nginx-1.26.0.tar.gz
+tar -xzf nginx-1.26.0.tar.gz
+cd nginx-1.26.0
+```
+
+Then configure and **point OpenSSL to `/etc/ssl`**:
+
+```bash
+./configure \
+  --prefix=/opt/nginx-pqc \
+  --with-http_ssl_module \
+  --with-openssl=/etc/ssl \
+  --with-openssl-opt="enable-ec_nistp_64_gcc_128" \
+  --with-http_v2_module
+```
+
+Then build and install:
+
+```bash
+make -j$(nproc)
+sudo make install
+```
+
+---
+
+### ✅ 3. Confirm Nginx Uses Your `/etc/ssl` OpenSSL
+
+Run:
+
+```bash
+/opt/nginx-pqc/sbin/nginx -V
+```
+
+Look for:
+
+```
+--with-openssl=/etc/ssl
+built with OpenSSL 3.5.1 ...
+```
+
+---
+
+### ✅ 4. Place Your PQC Certs (Already Using `oqsprovider`)
+
+Example for `MLDSA65`:
+
+```bash
+openssl genpkey -algorithm MLDSA65 -out /etc/nginx/ssl/server.key
+openssl req -new -x509 -key /etc/nginx/ssl/server.key -out /etc/nginx/ssl/server.crt -days 365 -subj "/CN=localhost"
+```
+
+---
+
+### ✅ 5. Update `nginx.conf`
+
+Edit `/opt/nginx-pqc/conf/nginx.conf` and make sure the block is like:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name localhost;
+
+    ssl_certificate     /etc/nginx/ssl/server.crt;
+    ssl_certificate_key /etc/nginx/ssl/server.key;
+
+    ssl_protocols       TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    location / {
+        root   html;
+        index  index.html index.htm;
+    }
+}
+```
+
+---
+
+### ✅ 6. Start and Test Nginx
+
+```bash
+sudo /opt/nginx-pqc/sbin/nginx
+```
+
+Check:
+
+```bash
+curl -vk https://localhost --cacert /etc/nginx/ssl/server.crt
+```
+
+Browser:
+
+* Go to `https://localhost`
+* Click the lock icon → View Certificate
+* Confirm PQC algorithm is shown (may show as "Unknown Signature Algorithm" in some browsers but that's expected)
+
+---
+
+### ✅ (Optional) Stop/Restart Nginx
+
+```bash
+sudo /opt/nginx-pqc/sbin/nginx -s stop
+sudo /opt/nginx-pqc/sbin/nginx -s reload
+```
+
+---
+
+## ✅ Summary
+
+| ✅ You Have                              | 🛠 What You Did                         |
+| --------------------------------------- | --------------------------------------- |
+| OpenSSL 3.5.1 + oqsprovider (✅ working) | Used it directly from `/etc/ssl`        |
+| PQC Certs (MLDSA etc.)                  | Already generated with working provider |
+| Linked Nginx to that OpenSSL            | During `./configure`                    |
+| Verified version and cert               | Using `nginx -V` and `curl -vk`         |
+
+You're now fully PQC-enabled with Nginx via `/etc/ssl` 🎯
+
+Let me know if you want:
+
+* To include fallback RSA certs (dual-chain setup)
+* A shell script to automate the entire setup
+* Streamlit-based monitor for certificate handshake info
